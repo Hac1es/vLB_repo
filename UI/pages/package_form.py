@@ -316,27 +316,34 @@ def _render_extra_files_section(
         ),
     ):
 
-        @ui.refreshable
-        def render_extra_files():
+        rows_parent = ui.column().classes("w-full gap-3")
+        empty_container = ui.column()
 
+        def render_empty():
+            empty_container.clear()
             if not state["extra"]:
-                with ui.column().classes("w-full items-center py-5 gap-1"):
-                    ui.icon("note_add").classes("text-3xl text-slate-600")
+                with empty_container:
+                    with ui.column().classes("w-full items-center py-5 gap-1"):
+                        ui.icon("note_add").classes("text-3xl text-slate-600")
+                        ui.label("No additional files").classes(
+                            "text-sm text-slate-400"
+                        )
 
-                    ui.label("No additional files").classes("text-sm text-slate-400")
+        def render_row(row, container):
+            """Render 1 file row vào container (dùng clear+reredraw cho remove/undo)."""
 
-                return
+            def rerender():
+                container.clear()
+                render_row(row, container)
 
-            for index, row in enumerate(state["extra"]):
+            with container:
                 with ui.card().classes(
                     "w-full bg-[#0d0d12] border border-slate-800 shadow-none p-4"
                 ):
                     # -----------------------------------------
                     # Existing file
                     # -----------------------------------------
-
                     if row["existing"]:
-                        # Removed → struck-through + undo
                         if row["action"] == "remove":
                             with ui.row().classes("w-full items-center gap-3"):
                                 ui.icon("delete_outline").classes("text-slate-600")
@@ -348,9 +355,9 @@ def _render_extra_files_section(
                                 )
                                 ui.space()
 
-                                def undo_remove(r=row):
-                                    r["action"] = "keep"
-                                    render_extra_files.refresh()
+                                def undo_remove():
+                                    row["action"] = "keep"
+                                    rerender()
 
                                 ui.button(
                                     icon="undo",
@@ -371,19 +378,19 @@ def _render_extra_files_section(
                                             f"replace → {row['file'][0]}"
                                         ).classes("text-xs text-indigo-400")
 
-                                def mark_remove(r=row):
-                                    r["action"] = "remove"
-                                    render_extra_files.refresh()
+                                def mark_remove():
+                                    row["action"] = "remove"
+                                    rerender()
 
                                 ui.button(
                                     icon="delete",
                                     on_click=mark_remove,
                                 ).props("flat round color=negative")
 
-                            def on_replace_upload(e, r=row):
-                                r["file"] = (e.name, e.content.read())
-                                r["action"] = "replace"
-                                render_extra_files.refresh()
+                            def on_replace_upload(e):
+                                row["file"] = (e.name, e.content.read())
+                                row["action"] = "replace"
+                                rerender()
 
                             ui.upload(
                                 label="Drop replacement here or browse",
@@ -395,7 +402,6 @@ def _render_extra_files_section(
                     # -----------------------------------------
                     # New file
                     # -----------------------------------------
-
                     else:
                         with ui.row().classes("w-full gap-3 items-center flex-wrap"):
                             ui.upload(
@@ -405,10 +411,7 @@ def _render_extra_files_section(
                                 on_upload=(
                                     lambda e, r=row: r.__setitem__(
                                         "file",
-                                        (
-                                            e.name,
-                                            e.content.read(),
-                                        ),
+                                        (e.name, e.content.read()),
                                     )
                                 ),
                             ).props("flat bordered").classes("w-52")
@@ -420,10 +423,11 @@ def _render_extra_files_section(
                             ).on(
                                 "update:model-value",
                                 lambda e, r=row: r.__setitem__(
-                                    "dest",
-                                    e.args or "",
+                                    "dest", e.args or ""
                                 ),
-                            ).props("outlined dense").classes("flex-1 min-w-[280px]")
+                            ).props("outlined dense").classes(
+                                "flex-1 min-w-[280px]"
+                            )
 
                             ui.checkbox(
                                 "Config",
@@ -431,8 +435,7 @@ def _render_extra_files_section(
                             ).on(
                                 "change",
                                 lambda e, r=row: r.__setitem__(
-                                    "config",
-                                    bool(e.args),
+                                    "config", bool(e.args)
                                 ),
                             )
 
@@ -443,39 +446,43 @@ def _render_extra_files_section(
                             ).on(
                                 "update:model-value",
                                 lambda e, r=row: r.__setitem__(
-                                    "mode",
-                                    e.args or "",
+                                    "mode", e.args or ""
                                 ),
                             ).props("outlined dense").classes("w-24")
 
-                            def delete_new_row(
-                                i=index,
-                            ):
-                                state["extra"].pop(i)
-                                render_extra_files.refresh()
+                            def delete_new_row():
+                                state["extra"].remove(row)
+                                container.delete()
+                                render_empty()
 
                             ui.button(
                                 icon="delete",
                                 on_click=delete_new_row,
                             ).props("flat round color=negative")
 
-        render_extra_files()
+        def add_row(row):
+            with rows_parent:
+                container = ui.column().classes("w-full")
+            render_row(row, container)
+
+        # Initial render
+        for row in state["extra"]:
+            add_row(row)
+        render_empty()
 
         def add_extra_file():
-
-            state["extra"].append(
-                {
-                    "existing": False,
-                    "filename": "",
-                    "dest": "",
-                    "config": False,
-                    "mode": "0644",
-                    "action": "add",
-                    "file": None,
-                }
-            )
-
-            render_extra_files.refresh()
+            row = {
+                "existing": False,
+                "filename": "",
+                "dest": "",
+                "config": False,
+                "mode": "0644",
+                "action": "add",
+                "file": None,
+            }
+            state["extra"].append(row)
+            add_row(row)
+            render_empty()
 
         ui.button(
             "Add file",
