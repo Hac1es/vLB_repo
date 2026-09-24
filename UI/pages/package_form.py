@@ -75,20 +75,20 @@ async def update_package_page(
 # =====================================================================
 
 
-def store_upload(
+async def store_upload(
     target: dict,
     key: str,
     event,
 ):
-    data = event.content.read()
+    data = await event.file.read()
 
     target[key] = (
-        event.name,
+        event.file.name,
         data,
     )
 
     ui.notify(
-        f"Loaded {event.name} ({len(data):,} bytes)",
+        f"Loaded {event.file.name} ({len(data):,} bytes)",
         type="positive",
     )
 
@@ -387,8 +387,8 @@ def _render_extra_files_section(
                                     on_click=mark_remove,
                                 ).props("flat round color=negative")
 
-                            def on_replace_upload(e):
-                                row["file"] = (e.name, e.content.read())
+                            async def on_replace_upload(e):
+                                row["file"] = (e.file.name, await e.file.read())
                                 row["action"] = "replace"
                                 rerender()
 
@@ -404,16 +404,14 @@ def _render_extra_files_section(
                     # -----------------------------------------
                     else:
                         with ui.row().classes("w-full gap-3 items-center flex-wrap"):
+                            async def on_new_upload(e, r=row):
+                                r["file"] = (e.file.name, await e.file.read())
+
                             ui.upload(
                                 label="File",
                                 multiple=False,
                                 auto_upload=True,
-                                on_upload=(
-                                    lambda e, r=row: r.__setitem__(
-                                        "file",
-                                        (e.name, e.content.read()),
-                                    )
-                                ),
+                                on_upload=on_new_upload,
                             ).props("flat bordered").classes("w-52")
 
                             ui.input(
