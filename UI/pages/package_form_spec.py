@@ -22,6 +22,7 @@ def init_state(package: dict) -> dict:
         "service_enabled": bool(current_service),
         "service_unit": None,
         "service_scripts": {},
+        "original": _snapshot(package),
     }
 
     for item in package.get("files", []):
@@ -35,12 +36,76 @@ def init_state(package: dict) -> dict:
                 "dest": item.get("destination", ""),
                 "config": item.get("config", False),
                 "mode": item.get("mode", "0644"),
+                "size": item.get("size"),
                 "action": "keep",
                 "file": None,
             }
         )
 
     return state
+
+
+def _snapshot(package: dict) -> dict:
+    """Capture original values for dirty-check on update."""
+    binary = package.get("binary") or {}
+    return {
+        "version": package.get("version"),
+        "arch": package.get("arch"),
+        "binary_destination": binary.get("destination"),
+        "binary_filename": binary.get("filename"),
+        "binary_size": binary.get("size"),
+        "extra": [
+            {
+                "filename": f.get("filename", f.get("source", "")),
+                "dest": f.get("destination"),
+                "config": f.get("config"),
+                "mode": f.get("mode"),
+                "size": f.get("size"),
+            }
+            for f in package.get("files", [])
+        ],
+        "service_enabled": bool(package.get("service")),
+        "service_unit": (package.get("service") or {}).get("unit"),
+    }
+
+
+def has_changes(
+    state: dict,
+    fields: dict,
+) -> bool:
+    """True nếu form state khác original snapshot (update mode only)."""
+    orig = state.get("original") or {}
+    if not orig:
+        return True
+
+    if fields["version"] != orig.get("version"):
+        return True
+    if fields["arch"] != orig.get("arch"):
+        return True
+    if fields["binary_destination"] != orig.get("binary_destination"):
+        return True
+
+    # Binary re-uploaded?
+    if state["binary"]:
+        return True
+
+    # Extra files: action changed or new file added?
+    for row in state["extra"]:
+        if row["existing"]:
+            if row["action"] != "keep":
+                return True
+        elif row["file"]:
+            return True
+
+    # Service changed?
+    if state["service_enabled"] != orig.get("service_enabled"):
+        return True
+    if state["service_unit"]:
+        return True
+    if state["service_scripts"]:
+        return True
+
+    return False
 
 
 def build_spec(

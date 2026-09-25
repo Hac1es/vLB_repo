@@ -91,6 +91,7 @@ def save_new(name: str, spec: dict, uploaded: dict[str, bytes]) -> dict:
     (d / "src").mkdir()
 
     _write_uploaded(name, uploaded)
+    _stamp_sizes(name, manifest)
     _write_manifest(name, manifest)
     build_deb(manifest, src_dir(name), deb_path(name))
     return manifest
@@ -104,6 +105,7 @@ def update(name: str, spec: dict, uploaded: dict[str, bytes]) -> dict:
     manifest = _merge_update(old, spec)
 
     _write_uploaded(name, uploaded)
+    _stamp_sizes(name, manifest)
     _write_manifest(name, manifest)
     build_deb(manifest, src_dir(name), deb_path(name))
     return manifest
@@ -215,6 +217,24 @@ def _clean_service(s: dict | None) -> dict | None:
 # -----------------------------------------------------------------
 # Helpers
 # -----------------------------------------------------------------
+
+
+def _stamp_sizes(name: str, manifest: dict) -> None:
+    """Ghi file size (bytes) vào manifest cho binary + files.
+
+    Frontend dùng size để detect "upload same file" (same name + same size
+    → no-op, skip).
+    """
+    sd = src_dir(name)
+    b = manifest.get("binary")
+    if b:
+        p = sd / b["filename"]
+        if p.exists():
+            b["size"] = p.stat().st_size
+    for f in manifest.get("files", []):
+        p = sd / f["filename"]
+        if p.exists():
+            f["size"] = p.stat().st_size
 
 
 def _write_uploaded(name: str, uploaded: dict[str, bytes]) -> None:

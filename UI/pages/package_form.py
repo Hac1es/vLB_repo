@@ -15,6 +15,7 @@ from common import (
 )
 from .package_form_spec import (
     build_spec,
+    has_changes,
     init_state,
 )
 
@@ -79,8 +80,18 @@ async def store_upload(
     target: dict,
     key: str,
     event,
+    original: dict | None = None,
 ):
     data = await event.file.read()
+
+    # Same-file guard: skip if filename + size match original (update mode)
+    if original and original.get("size") is not None:
+        if event.file.name == original.get("filename") and len(data) == original["size"]:
+            ui.notify(
+                f"{event.file.name} — same file, no change",
+                type="info",
+            )
+            return
 
     target[key] = (
         event.file.name,
@@ -193,7 +204,7 @@ def _render_metadata_section(
                     "Package name",
                     value=package.get(
                         "name",
-                        "myapp",
+                        "",
                     ),
                     placeholder="my-agent",
                 )
@@ -278,6 +289,7 @@ def _render_binary_section(
                 state,
                 "binary",
                 e,
+                original=current_binary if is_update else None,
             ),
         ).props("flat bordered").classes("w-full")
 
@@ -286,9 +298,9 @@ def _render_binary_section(
                 "Install destination",
                 value=current_binary.get(
                     "destination",
-                    f"/usr/bin/{package.get('name', 'myapp')}",
+                    "/usr/bin/",
                 ),
-                placeholder="/usr/bin/myapp",
+                placeholder="/usr/bin/<name>",
             )
             .props("outlined")
             .classes("w-full")
@@ -388,7 +400,18 @@ def _render_extra_files_section(
                                 ).props("flat round color=negative")
 
                             async def on_replace_upload(e):
-                                row["file"] = (e.file.name, await e.file.read())
+                                data = await e.file.read()
+                                if (
+                                    e.file.name == row["filename"]
+                                    and row.get("size") is not None
+                                    and len(data) == row["size"]
+                                ):
+                                    ui.notify(
+                                        f"{e.file.name} — same file, no change",
+                                        type="info",
+                                    )
+                                    return
+                                row["file"] = (e.file.name, data)
                                 row["action"] = "replace"
                                 rerender()
 
@@ -417,7 +440,7 @@ def _render_extra_files_section(
                             ui.input(
                                 "Destination",
                                 value=row["dest"],
-                                placeholder=("/etc/myapp/config.yaml"),
+                                placeholder="/etc/<name>/config.yaml",
                             ).on(
                                 "update:model-value",
                                 lambda e, r=row: r.__setitem__(
@@ -732,6 +755,13 @@ def render_package_form(
                 "arch": arch_input.value,
                 "binary_destination": (binary_destination_input.value),
             }
+
+            if is_update and not has_changes(state, fields):
+                ui.notify(
+                    "No changes detected — nothing to update",
+                    type="info",
+                )
+                return
 
             spec, files = build_spec(
                 mode,
